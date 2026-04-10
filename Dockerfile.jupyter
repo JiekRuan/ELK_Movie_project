@@ -1,0 +1,17 @@
+FROM jupyter/base-notebook:python-3.11
+ 
+USER root
+ 
+# Librairies utiles pour interagir avec Elasticsearch et analyser les données
+RUN pip install --no-cache-dir \
+    elasticsearch==8.10.1 \
+    pandas==2.1.1 \
+    matplotlib==3.8.0 \
+    seaborn==0.13.0 \
+    requests==2.31.0 \
+    python-dotenv==1.0.0
+ 
+USER jovyan
+ 
+# Répertoire de travail par défaut
+WORKDIR /home/jovyan/work

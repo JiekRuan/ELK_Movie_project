@@ -11,8 +11,7 @@
 ## 1. Cloner le repo et placer le CSV
 
 ```bash
-git clone https://github.com/jiekruan/movies-elk.git
-cd movies-elk
+git clone https://github.com/JiekRuan/movies-elk.git
 
 # Copier le dataset dans le dossier DATA/
 cp /chemin/vers/movies.csv DATA/movies.csv

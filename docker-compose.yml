@@ -1,13 +1,17 @@
 version: "3.8"
 
 services:
+
+  # ─────────────────────────────────────────
+  # Elasticsearch
+  # ─────────────────────────────────────────
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.10.2
-    container_name: elasticsearch
+    container_name: movies-elasticsearch
     environment:
       - discovery.type=single-node
       - xpack.security.enabled=false
-      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+      - ES_JAVA_OPTS=-Xms1g -Xmx1g
     ports:
       - "9200:9200"
       - "9300:9300"
@@ -18,11 +22,14 @@ services:
       interval: 10s
       timeout: 5s
       retries: 15
-      start_period: 20s
+      start_period: 30s
 
+  # ─────────────────────────────────────────
+  # Kibana
+  # ─────────────────────────────────────────
   kibana:
     image: docker.elastic.co/kibana/kibana:8.10.2
-    container_name: kibana
+    container_name: movies-kibana
     depends_on:
       elasticsearch:
         condition: service_healthy
@@ -36,22 +43,53 @@ services:
       interval: 15s
       timeout: 10s
       retries: 20
-      start_period: 30s
+      start_period: 40s
 
+  # ─────────────────────────────────────────
+  # Logstash
+  # ─────────────────────────────────────────
   logstash:
     image: docker.elastic.co/logstash/logstash:8.10.2
-    container_name: logstash
+    container_name: movies-logstash
     depends_on:
       elasticsearch:
         condition: service_healthy
     environment:
-      - LS_JAVA_OPTS=-Xms256m -Xmx256m
+      - LS_JAVA_OPTS=-Xms512m -Xmx512m
     ports:
       - "9600:9600"
     volumes:
       - ./logstash/pipeline/logstash.conf:/usr/share/logstash/pipeline/logstash.conf:ro
       - ./DATA:/data:ro
-      - ./logs:/usr/share/logstash/logs:ro
+      - ./logs:/usr/share/logstash/logs
+
+  # ─────────────────────────────────────────
+  # Jupyter
+  # ─────────────────────────────────────────
+  jupyter:
+    build:
+      context: .
+      dockerfile: Dockerfile.jupyter
+    container_name: movies-jupyter
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    environment:
+      - JUPYTER_TOKEN=movieslab
+      - ES_URL=http://elasticsearch:9200
+      - ES_INDEX_RAW=movies_raw
+      - ES_INDEX_CLEAN=movies_clean
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./notebooks:/home/jovyan/work
+      - ./DATA:/home/jovyan/data:ro
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8888/lab')\""]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 30s
 
 volumes:
   es_data:
