@@ -11,10 +11,6 @@
         "english_stemmer": {
           "type": "stemmer",
           "language": "english"
-        },
-        "french_stop": {
-          "type": "stop",
-          "stopwords": "_french_"
         }
       },
       "analyzer": {
@@ -26,20 +22,14 @@
             "english_stop",
             "english_stemmer",
             "asciifolding"
-          ],
-          "char_filter": ["html_strip"]
-        },
-        "keyword_lowercase": {
-          "type": "custom",
-          "tokenizer": "keyword",
-          "filter": ["lowercase", "trim"]
+          ]
         }
       }
     }
   },
   "mappings": {
     "properties": {
-      "id": {
+      "movie_id": {
         "type": "integer"
       },
       "title": {
@@ -56,34 +46,11 @@
         "type": "text",
         "analyzer": "movie_text_analyzer"
       },
-      "tagline": {
-        "type": "text",
-        "analyzer": "movie_text_analyzer"
-      },
-      "genres": {
-        "type": "keyword"
-      },
-      "keywords": {
-        "type": "keyword"
-      },
       "original_language": {
         "type": "keyword"
       },
-      "status": {
-        "type": "keyword"
-      },
-      "production_companies": {
-        "type": "keyword"
-      },
-      "credits": {
-        "type": "keyword"
-      },
-      "recommendations": {
-        "type": "keyword"
-      },
       "release_date": {
-        "type": "date",
-        "format": "strict_date_optional_time||epoch_millis"
+        "type": "date"
       },
       "release_year": {
         "type": "integer"
@@ -91,39 +58,11 @@
       "popularity": {
         "type": "float"
       },
-      "budget": {
-        "type": "long",
-        "null_value": -1
-      },
-      "revenue": {
-        "type": "long",
-        "null_value": -1
-      },
-      "runtime": {
-        "type": "float"
-      },
       "vote_average": {
         "type": "float"
       },
       "vote_count": {
         "type": "integer"
-      },
-      "profit": {
-        "type": "long"
-      },
-      "roi_pct": {
-        "type": "float"
-      },
-      "has_financials": {
-        "type": "boolean"
-      },
-      "poster_path": {
-        "type": "keyword",
-        "index": false
-      },
-      "backdrop_path": {
-        "type": "keyword",
-        "index": false
       }
     }
   }
