@@ -1,29 +1,33 @@
 """
-search_api.py — Mini moteur de recherche Movies
-Connecté à Elasticsearch (index movies_clean)
-Lancement : python search_api.py
-Accès     : http://localhost:8000
+Search.py - Moteur de recherche Movies
+Connecté à Elasticsearch sur l'index movies_clean
+Lancement : python Search.py
+Accès : http://localhost:8000
 """
 
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, parse_qs
 import json
+import os
 import urllib.request
 import urllib.error
 
-ES_HOST  = "http://localhost:9200"
+# on lit l'URL depuis les variables d'environnement pour que ça marche
+# aussi bien en local qu'à l'intérieur d'un conteneur Docker
+ES_HOST  = os.getenv("ES_URL", "http://localhost:9200")
 ES_INDEX = "movies_clean"
 
 
 def es_search(query: str, genre: str = None, language: str = None,
               year_from: int = None, year_to: int = None,
               min_rating: float = None, size: int = 10) -> dict:
-    """Construit et exécute une requête bool vers Elasticsearch."""
+    """Construit et envoie une requête bool vers Elasticsearch."""
 
     must_clauses   = []
     filter_clauses = []
 
-    # ── Recherche full-text ──────────────────────────────────
+    # si l'utilisateur a tapé quelque chose on fait un multi_match sur titre + overview
+    # le titre est boosté x3 parce qu'un mot dans le titre est plus pertinent
     if query:
         must_clauses.append({
             "multi_match": {
@@ -36,7 +40,7 @@ def es_search(query: str, genre: str = None, language: str = None,
     else:
         must_clauses.append({"match_all": {}})
 
-    # ── Filtres exacts ───────────────────────────────────────
+    # on construit les filtres selon ce que l'utilisateur a rempli
     if genre:
         filter_clauses.append({"term": {"genres": genre}})
 
@@ -45,13 +49,16 @@ def es_search(query: str, genre: str = None, language: str = None,
 
     if year_from or year_to:
         year_range = {}
-        if year_from: year_range["gte"] = year_from
-        if year_to:   year_range["lte"] = year_to
+        if year_from:
+            year_range["gte"] = year_from
+        if year_to:
+            year_range["lte"] = year_to
         filter_clauses.append({"range": {"release_year": year_range}})
 
     if min_rating:
         filter_clauses.append({"range": {"vote_average": {"gte": min_rating}}})
 
+    # on limite les champs retournés pour ne pas surcharger la réponse
     es_query = {
         "size": size,
         "_source": [
@@ -65,10 +72,12 @@ def es_search(query: str, genre: str = None, language: str = None,
                 "filter": filter_clauses
             }
         },
+        # on trie d'abord par score de pertinence, puis par popularité en cas d'égalité
         "sort": [
             "_score",
             {"popularity": {"order": "desc"}}
         ],
+        # le highlight permet de mettre en gras les mots qui ont matché dans l'interface
         "highlight": {
             "fields": {
                 "title":    {},
@@ -93,7 +102,7 @@ def es_search(query: str, genre: str = None, language: str = None,
 
 
 def format_results(raw: dict) -> dict:
-    """Formate la réponse ES pour l'API."""
+    """Transforme la réponse brute d'Elasticsearch en format propre pour l'API."""
     if "error" in raw:
         return raw
 
@@ -102,29 +111,28 @@ def format_results(raw: dict) -> dict:
 
     results = []
     for h in hits.get("hits", []):
-        src  = h.get("_source", {})
-        hl   = h.get("highlight", {})
+        src = h.get("_source", {})
+        hl  = h.get("highlight", {})
+
+        # si le champ a été mis en highlight on prend ça, sinon la valeur brute
         item = {
-            "id":          src.get("id"),
-            "title":       hl.get("title", [src.get("title", "")])[0],
-            "overview":    hl.get("overview", [src.get("overview", "")])[0],
-            "genres":      src.get("genres", []),
-            "language":    src.get("original_language"),
-            "year":        src.get("release_year"),
-            "vote":        src.get("vote_average"),
-            "vote_count":  src.get("vote_count"),
-            "popularity":  src.get("popularity"),
-            "poster":      f"https://image.tmdb.org/t/p/w200{src.get('poster_path', '')}",
-            "score":       round(h.get("_score", 0), 3)
+            "id":         src.get("id"),
+            "title":      hl.get("title", [src.get("title", "")])[0],
+            "overview":   hl.get("overview", [src.get("overview", "")])[0],
+            "genres":     src.get("genres", []),
+            "language":   src.get("original_language"),
+            "year":       src.get("release_year"),
+            "vote":       src.get("vote_average"),
+            "vote_count": src.get("vote_count"),
+            "popularity": src.get("popularity"),
+            "poster":     f"https://image.tmdb.org/t/p/w200{src.get('poster_path', '')}",
+            "score":      round(h.get("_score", 0), 3)
         }
         results.append(item)
 
     return {"total": total, "results": results}
 
 
-# ─────────────────────────────────────────────────────────────
-# Interface HTML
-# ─────────────────────────────────────────────────────────────
 HTML = """<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -280,7 +288,6 @@ HTML = """<!DOCTYPE html>
       });
     }
 
-    // Recherche au chargement
     document.getElementById('q').addEventListener('keydown', e => {
       if (e.key === 'Enter') search();
     });
@@ -290,9 +297,6 @@ HTML = """<!DOCTYPE html>
 </html>"""
 
 
-# ─────────────────────────────────────────────────────────────
-# Serveur HTTP
-# ─────────────────────────────────────────────────────────────
 class Handler(BaseHTTPRequestHandler):
 
     def log_message(self, fmt, *args):
@@ -301,26 +305,24 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
 
-        # ── UI HTML ─────────────────────────────────────────
         if parsed.path == "/" or parsed.path == "":
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
             self.wfile.write(HTML.encode("utf-8"))
 
-        # ── API JSON ─────────────────────────────────────────
         elif parsed.path == "/api/search":
-            qs = parse_qs(parsed.query)
+            qs  = parse_qs(parsed.query)
             get = lambda k, d=None: qs[k][0] if k in qs else d
 
             raw = es_search(
-                query     = get("q", ""),
-                genre     = get("genre"),
-                language  = get("language"),
-                year_from = int(get("year_from")) if get("year_from") else None,
-                year_to   = int(get("year_to"))   if get("year_to")   else None,
-                min_rating= float(get("min_rating")) if get("min_rating") else None,
-                size      = int(get("size", "20"))
+                query      = get("q", ""),
+                genre      = get("genre"),
+                language   = get("language"),
+                year_from  = int(get("year_from"))   if get("year_from")   else None,
+                year_to    = int(get("year_to"))     if get("year_to")     else None,
+                min_rating = float(get("min_rating")) if get("min_rating") else None,
+                size       = int(get("size", "20"))
             )
             result = format_results(raw)
 
@@ -337,6 +339,6 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     port = 8000
-    print(f"🎬 Movies Search démarré → http://localhost:{port}")
-    print(f"   ES  : {ES_HOST}/{ES_INDEX}")
+    print(f"Moteur de recherche démarré sur http://localhost:{port}")
+    print(f"Connecté à {ES_HOST} / index {ES_INDEX}")
     HTTPServer(("0.0.0.0", port), Handler).serve_forever()
